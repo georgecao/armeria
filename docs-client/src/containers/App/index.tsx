@@ -31,7 +31,7 @@ import ExpandLess from '@material-ui/icons/ExpandLess';
 import ExpandMore from '@material-ui/icons/ExpandMore';
 import MenuIcon from '@material-ui/icons/Menu';
 import React, { useCallback, useEffect, useReducer, useState } from 'react';
-import Helmet from 'react-helmet';
+import { Helmet } from 'react-helmet';
 import { hot } from 'react-hot-loader/root';
 import { Route, RouteComponentProps, withRouter } from 'react-router-dom';
 
@@ -210,7 +210,7 @@ const AppDrawer: React.FunctionComponent<AppDrawerProps> = ({
                       }
                     >
                       <Grid container alignItems="center" spacing={2}>
-                        <Grid item xs={'auto'}>
+                        <Grid item xs="auto">
                           <Typography
                             className={httpMethodClass(method.httpMethod)}
                           >
@@ -375,15 +375,10 @@ const App: React.FunctionComponent<Props> = (props) => {
 
   const navigateTo = useCallback(
     (to: string) => {
-      const params = new URLSearchParams(props.location.search);
-      params.delete('args');
-      const url = params.has('http_headers_sticky')
-        ? `${to}?${params.toString()}`
-        : to;
-      props.history.push(url);
+      props.history.push(to);
       setMobileDrawerOpen(false);
     },
-    [props.location.search, props.history],
+    [props.history],
   );
 
   const toggleMobileDrawer = useCallback(() => {
@@ -466,14 +461,14 @@ const App: React.FunctionComponent<Props> = (props) => {
             color="inherit"
             noWrap
           >
-            <a href="#" className={classes.mainHeader}>
+            <span className={classes.mainHeader}>
               Armeria documentation service
               {versions
                 ? ` ${extractSimpleArtifactVersion(
                     versions.getArmeriaArtifactVersion(),
                   )}`
                 : ''}
-            </a>
+            </span>
           </Typography>
           <div style={{ flex: 1 }} />
           <GotoSelect specification={specification} navigateTo={navigateTo} />

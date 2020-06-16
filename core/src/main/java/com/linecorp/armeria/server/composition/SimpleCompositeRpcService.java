@@ -27,7 +27,10 @@ import com.linecorp.armeria.server.RpcService;
 /**
  * A general purpose {@link AbstractCompositeService} implementation. Useful when you do not want to define
  * a new dedicated {@link RpcService} type.
+ *
+ * @deprecated This class will be removed without a replacement.
  */
+@Deprecated
 public final class SimpleCompositeRpcService
         extends AbstractCompositeService<RpcService, RpcRequest, RpcResponse> implements RpcService {
 
@@ -53,24 +56,12 @@ public final class SimpleCompositeRpcService
         return new SimpleCompositeRpcServiceBuilder();
     }
 
-    /**
-     * Creates a new instance that is composed of the specified entries.
-     *
-     * @deprecated Use {@link #of(CompositeServiceEntry[])}.
-     */
     @SafeVarargs
-    @Deprecated
-    public SimpleCompositeRpcService(CompositeServiceEntry<RpcService>... services) {
+    SimpleCompositeRpcService(CompositeServiceEntry<RpcService>... services) {
         super(services);
     }
 
-    /**
-     * Creates a new instance that is composed of the specified entries.
-     *
-     * @deprecated Use {@link #of(Iterable)}.
-     */
-    @Deprecated
-    public SimpleCompositeRpcService(Iterable<CompositeServiceEntry<RpcService>> services) {
+    SimpleCompositeRpcService(Iterable<CompositeServiceEntry<RpcService>> services) {
         super(services);
     }
 

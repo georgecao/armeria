@@ -46,6 +46,7 @@ function createMapByArtifactId<T extends ArtifactIdObject>(
 
 export class Versions {
   private readonly data: Version[];
+
   private versionsByArtifactId: Map<string, Version>;
 
   constructor(data: Version[]) {

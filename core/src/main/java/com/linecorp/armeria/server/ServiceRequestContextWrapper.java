@@ -18,22 +18,21 @@ package com.linecorp.armeria.server;
 
 import java.net.InetAddress;
 import java.net.SocketAddress;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.function.Consumer;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import com.linecorp.armeria.common.HttpHeaders;
+import com.linecorp.armeria.common.HttpHeadersBuilder;
 import com.linecorp.armeria.common.HttpRequest;
 import com.linecorp.armeria.common.MediaType;
 import com.linecorp.armeria.common.RequestContextWrapper;
 import com.linecorp.armeria.common.RequestId;
 import com.linecorp.armeria.common.RpcRequest;
-import com.linecorp.armeria.server.logging.AccessLogWriter;
+import com.linecorp.armeria.common.util.TimeoutMode;
 
 /**
  * Wraps an existing {@link ServiceRequestContext}.
@@ -69,15 +68,11 @@ public class ServiceRequestContextWrapper
     }
 
     @Override
-    public boolean isTimedOut() {
-        return false;
-    }
-
-    @Override
     public InetAddress clientAddress() {
         return delegate().clientAddress();
     }
 
+    @Deprecated
     @Override
     public ServiceRequestContext newDerivedContext(RequestId id,
                                                    @Nullable HttpRequest req,
@@ -86,18 +81,8 @@ public class ServiceRequestContextWrapper
     }
 
     @Override
-    public Server server() {
-        return delegate().server();
-    }
-
-    @Override
-    public VirtualHost virtualHost() {
-        return delegate().virtualHost();
-    }
-
-    @Override
-    public Route route() {
-        return delegate().route();
+    public ServiceConfig config() {
+        return delegate().config();
     }
 
     @Override
@@ -108,11 +93,6 @@ public class ServiceRequestContextWrapper
     @Override
     public Map<String, String> pathParams() {
         return delegate().pathParams();
-    }
-
-    @Override
-    public HttpService service() {
-        return delegate().service();
     }
 
     @Override
@@ -147,45 +127,14 @@ public class ServiceRequestContextWrapper
     }
 
     @Override
-    @Deprecated
-    public void setRequestTimeoutMillis(long requestTimeoutMillis) {
-        delegate().setRequestTimeoutMillis(requestTimeoutMillis);
+    public void setRequestTimeoutMillis(TimeoutMode mode, long requestTimeoutMillis) {
+        delegate().setRequestTimeoutMillis(mode, requestTimeoutMillis);
     }
 
     @Override
     @Deprecated
-    public void setRequestTimeout(Duration requestTimeout) {
-        delegate().setRequestTimeout(requestTimeout);
-    }
-
-    @Override
-    public void extendRequestTimeoutMillis(long requestTimeoutMillis) {
-        delegate().extendRequestTimeoutMillis(requestTimeoutMillis);
-    }
-
-    @Override
-    public void extendRequestTimeout(Duration requestTimeout) {
-        delegate().extendRequestTimeout(requestTimeout);
-    }
-
-    @Override
-    public void setRequestTimeoutAfterMillis(long requestTimeoutMillis) {
-        delegate().setRequestTimeoutAfterMillis(requestTimeoutMillis);
-    }
-
-    @Override
-    public void setRequestTimeoutAfter(Duration requestTimeout) {
-        delegate().setRequestTimeoutAfter(requestTimeout);
-    }
-
-    @Override
     public void setRequestTimeoutAtMillis(long requestTimeoutAtMillis) {
-        delegate().setRequestTimeoutAfterMillis(requestTimeoutAtMillis);
-    }
-
-    @Override
-    public void setRequestTimeoutAt(Instant requestTimeoutAt) {
-        delegate().setRequestTimeoutAt(requestTimeoutAt);
+        delegate().setRequestTimeoutAtMillis(requestTimeoutAtMillis);
     }
 
     @Nullable
@@ -200,6 +149,16 @@ public class ServiceRequestContextWrapper
     }
 
     @Override
+    public void timeoutNow() {
+        delegate().timeoutNow();
+    }
+
+    @Override
+    public boolean isTimedOut() {
+        return delegate().isTimedOut();
+    }
+
+    @Override
     public long maxRequestLength() {
         return delegate().maxRequestLength();
     }
@@ -207,16 +166,6 @@ public class ServiceRequestContextWrapper
     @Override
     public void setMaxRequestLength(long maxRequestLength) {
         delegate().setMaxRequestLength(maxRequestLength);
-    }
-
-    @Override
-    public boolean verboseResponses() {
-        return delegate().verboseResponses();
-    }
-
-    @Override
-    public AccessLogWriter accessLogWriter() {
-        return delegate().accessLogWriter();
     }
 
     @Override
@@ -230,25 +179,13 @@ public class ServiceRequestContextWrapper
     }
 
     @Override
-    public void setAdditionalResponseHeaders(
-            Iterable<? extends Entry<? extends CharSequence, ?>> headers) {
-        delegate().setAdditionalResponseHeaders(headers);
-    }
-
-    @Override
     public void addAdditionalResponseHeader(CharSequence name, Object value) {
         delegate().addAdditionalResponseHeader(name, value);
     }
 
     @Override
-    public void addAdditionalResponseHeaders(
-            Iterable<? extends Entry<? extends CharSequence, ?>> headers) {
-        delegate().addAdditionalResponseHeaders(headers);
-    }
-
-    @Override
-    public boolean removeAdditionalResponseHeader(CharSequence name) {
-        return delegate().removeAdditionalResponseHeader(name);
+    public void mutateAdditionalResponseHeaders(Consumer<HttpHeadersBuilder> mutator) {
+        delegate().mutateAdditionalResponseHeaders(mutator);
     }
 
     @Override
@@ -262,25 +199,13 @@ public class ServiceRequestContextWrapper
     }
 
     @Override
-    public void setAdditionalResponseTrailers(
-            Iterable<? extends Entry<? extends CharSequence, ?>> headers) {
-        delegate().setAdditionalResponseTrailers(headers);
-    }
-
-    @Override
     public void addAdditionalResponseTrailer(CharSequence name, Object value) {
         delegate().addAdditionalResponseTrailer(name, value);
     }
 
     @Override
-    public void addAdditionalResponseTrailers(
-            Iterable<? extends Entry<? extends CharSequence, ?>> headers) {
-        delegate().addAdditionalResponseTrailers(headers);
-    }
-
-    @Override
-    public boolean removeAdditionalResponseTrailer(CharSequence name) {
-        return delegate().removeAdditionalResponseTrailer(name);
+    public void mutateAdditionalResponseTrailers(Consumer<HttpHeadersBuilder> mutator) {
+        delegate().mutateAdditionalResponseTrailers(mutator);
     }
 
     @Override

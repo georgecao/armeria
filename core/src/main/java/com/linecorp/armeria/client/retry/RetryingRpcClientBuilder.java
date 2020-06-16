@@ -27,14 +27,8 @@ import com.linecorp.armeria.common.RpcResponse;
  */
 public final class RetryingRpcClientBuilder extends AbstractRetryingClientBuilder<RpcResponse> {
 
-    /**
-     * Creates a new builder with the specified {@link RetryStrategyWithContent}.
-     *
-     * @deprecated Use {@link RetryingRpcClient#builder(RetryStrategyWithContent)}.
-     */
-    @Deprecated
-    public RetryingRpcClientBuilder(RetryStrategyWithContent<RpcResponse> retryStrategyWithContent) {
-        super(retryStrategyWithContent);
+    RetryingRpcClientBuilder(RetryRuleWithContent<RpcResponse> retryRuleWithContent) {
+        super(retryRuleWithContent);
     }
 
     /**
@@ -42,7 +36,7 @@ public final class RetryingRpcClientBuilder extends AbstractRetryingClientBuilde
      */
     public RetryingRpcClient build(RpcClient delegate) {
         return new RetryingRpcClient(
-                delegate, retryStrategyWithContent(), maxTotalAttempts(),
+                delegate, retryRuleWithContent(), maxTotalAttempts(),
                 responseTimeoutMillisForEachAttempt());
     }
 

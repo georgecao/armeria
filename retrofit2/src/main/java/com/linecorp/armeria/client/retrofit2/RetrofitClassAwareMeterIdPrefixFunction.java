@@ -87,7 +87,7 @@ final class RetrofitClassAwareMeterIdPrefixFunction extends RetrofitMeterIdPrefi
                                             @Nullable String serviceTagName,
                                             @Nullable String serviceName,
                                             Class<?> serviceClass) {
-        super(name, null, null, null);
+        super(name, null, null);
 
         this.name = name;
         this.serviceTagName = firstNonNull(serviceTagName, "service");
@@ -158,7 +158,7 @@ final class RetrofitClassAwareMeterIdPrefixFunction extends RetrofitMeterIdPrefi
         } else {
             final Method valueMethod;
             try {
-                valueMethod = annotation.getClass().getMethod("value");
+                valueMethod = annotation.annotationType().getMethod("value");
                 httpPath = (String) valueMethod.invoke(annotation);
             } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
                 // Should never happen on valid Retrofit client.

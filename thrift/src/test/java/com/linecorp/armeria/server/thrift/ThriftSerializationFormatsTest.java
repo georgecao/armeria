@@ -21,6 +21,7 @@ import static com.linecorp.armeria.common.thrift.ThriftSerializationFormats.BINA
 import static com.linecorp.armeria.common.thrift.ThriftSerializationFormats.COMPACT;
 import static com.linecorp.armeria.common.thrift.ThriftSerializationFormats.JSON;
 import static com.linecorp.armeria.common.thrift.ThriftSerializationFormats.TEXT;
+import static com.linecorp.armeria.common.thrift.ThriftSerializationFormats.TEXT_NAMED_ENUM;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -38,7 +39,6 @@ import com.linecorp.armeria.client.Clients;
 import com.linecorp.armeria.client.InvalidResponseHeadersException;
 import com.linecorp.armeria.common.HttpHeaderNames;
 import com.linecorp.armeria.common.Scheme;
-import com.linecorp.armeria.common.SerializationFormat;
 import com.linecorp.armeria.common.SessionProtocol;
 import com.linecorp.armeria.server.ServerBuilder;
 import com.linecorp.armeria.service.test.thrift.main.HelloService;
@@ -76,28 +76,24 @@ public class ThriftSerializationFormatsTest {
         assertThat(find(parse("application/vnd.apache.thrift.json; charset=utf-8"))).isSameAs(JSON);
         assertThat(find(parse("application/x-thrift; protocol=ttext; charset=utf-8"))).isSameAs(TEXT);
         assertThat(find(parse("application/vnd.apache.thrift.text; charset=utf-8"))).isSameAs(TEXT);
+        assertThat(find(parse("application/x-thrift; protocol=ttext_named_enum; charset=utf-8")))
+                .isSameAs(TEXT_NAMED_ENUM);
+        assertThat(find(parse("application/vnd.apache.thrift.text_named_enum; charset=utf-8")))
+                .isSameAs(TEXT_NAMED_ENUM);
 
         // .. but neither non-UTF-8 charsets:
         assertThat(find(parse("application/x-thrift; protocol=tjson; charset=us-ascii"))).isNull();
         assertThat(find(parse("application/vnd.apache.thrift.json; charset=us-ascii"))).isNull();
         assertThat(find(parse("application/x-thrift; protocol=ttext; charset=us-ascii"))).isNull();
         assertThat(find(parse("application/vnd.apache.thrift.text; charset=us-ascii"))).isNull();
+        assertThat(find(parse("application/x-thrift; protocol=ttext_named_enum; charset=us-ascii"))).isNull();
+        assertThat(find(parse("application/vnd.apache.thrift.text_named_enum; charset=us-ascii"))).isNull();
 
         // .. nor binary/compact formats:
         assertThat(find(parse("application/x-thrift; protocol=tbinary; charset=utf-8"))).isNull();
         assertThat(find(parse("application/vnd.apache.thrift.binary; charset=utf-8"))).isNull();
         assertThat(find(parse("application/x-thrift; protocol=tcompact; charset=utf-8"))).isNull();
         assertThat(find(parse("application/vnd.apache.thrift.compact; charset=utf-8"))).isNull();
-    }
-
-    @Test
-    @SuppressWarnings("deprecation")
-    public void backwardCompatibility() {
-        assertThat(SerializationFormat.ofThrift()).containsExactlyInAnyOrder(BINARY, COMPACT, JSON, TEXT);
-        assertThat(SerializationFormat.THRIFT_BINARY).isNotNull();
-        assertThat(SerializationFormat.THRIFT_COMPACT).isNotNull();
-        assertThat(SerializationFormat.THRIFT_JSON).isNotNull();
-        assertThat(SerializationFormat.THRIFT_TEXT).isNotNull();
     }
 
     @Test
@@ -164,14 +160,12 @@ public class ThriftSerializationFormatsTest {
     @Test
     public void givenClients_whenBinary_thenBuildClient() throws Exception {
         HelloService.Iface client =
-                Clients.builder(Scheme.of(BINARY, SessionProtocol.HTTP), server.httpEndpoint())
-                       .path("/hello")
-                       .build(HelloService.Iface.class);
+                Clients.newClient(Scheme.of(BINARY, SessionProtocol.HTTP), server.httpEndpoint(), "/hello",
+                                  HelloService.Iface.class);
         assertThat(client.hello("Trustin")).isEqualTo("Hello, Trustin!");
 
-        client = Clients.builder(Scheme.of(TEXT, SessionProtocol.HTTP), server.httpEndpoint())
-                        .path("/hello")
-                        .build(HelloService.Iface.class);
+        client = Clients.newClient(Scheme.of(TEXT, SessionProtocol.HTTP), server.httpEndpoint(), "/hello",
+                                   HelloService.Iface.class);
         assertThat(client.hello("Trustin")).isEqualTo("Hello, Trustin!");
     }
 }

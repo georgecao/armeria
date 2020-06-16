@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 LINE Corporation
+ * Copyright 2020 LINE Corporation
  *
  * LINE Corporation licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
@@ -23,8 +23,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.linecorp.armeria.client.WebClient;
 import com.linecorp.armeria.common.HttpMethod;
@@ -36,23 +36,24 @@ import com.linecorp.armeria.common.RequestHeaders;
 import com.linecorp.armeria.server.ServerBuilder;
 import com.linecorp.armeria.server.ServiceRequestContext;
 import com.linecorp.armeria.server.annotation.Get;
-import com.linecorp.armeria.testing.junit4.server.ServerRule;
+import com.linecorp.armeria.testing.junit.server.ServerExtension;
 
-import io.reactivex.BackpressureStrategy;
-import io.reactivex.Completable;
-import io.reactivex.Flowable;
-import io.reactivex.Maybe;
-import io.reactivex.Single;
-import io.reactivex.plugins.RxJavaPlugins;
+import io.reactivex.rxjava3.core.BackpressureStrategy;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 
-public class RequestContextAssemblyTest {
+class RequestContextAssemblyTest {
 
-    @Rule
-    public final ServerRule rule = new ServerRule() {
+    @RegisterExtension
+    static final ServerExtension server = new ServerExtension() {
         @Override
         protected void configure(ServerBuilder sb) throws Exception {
             sb.annotatedService(new Object() {
                 @Get("/foo")
+                @SuppressWarnings("CheckReturnValue")
                 public HttpResponse foo(ServiceRequestContext ctx, HttpRequest req) {
                     final CompletableFuture<HttpResponse> res = new CompletableFuture<>();
                     flowable(10)
@@ -64,31 +65,27 @@ public class RequestContextAssemblyTest {
                             .flatMapMaybe(RequestContextAssemblyTest::maybe)
                             .map(RequestContextAssemblyTest::checkRequestContext)
                             .flatMapCompletable(RequestContextAssemblyTest::completable)
-                            .subscribe(() -> {
-                                res.complete(HttpResponse.of(HttpStatus.OK));
-                            }, e -> {
-                                res.completeExceptionally(e);
-                            });
+                            .subscribe(() -> res.complete(HttpResponse.of(HttpStatus.OK)),
+                                       res::completeExceptionally);
                     return HttpResponse.from(res);
                 }
 
                 @Get("/single")
+                @SuppressWarnings("CheckReturnValue")
                 public HttpResponse single(ServiceRequestContext ctx, HttpRequest req) {
                     final CompletableFuture<HttpResponse> res = new CompletableFuture<>();
                     Single.just("")
                           .flatMap(RequestContextAssemblyTest::single)
-                          .subscribe((s, throwable) -> {
-                              res.complete(HttpResponse.of(HttpStatus.OK));
-                          });
+                          .subscribe((s, throwable) -> res.complete(HttpResponse.of(HttpStatus.OK)));
                     return HttpResponse.from(res);
                 }
             });
         }
     };
 
-    private final ExecutorService pool = Executors.newCachedThreadPool();
+    private static final ExecutorService pool = Executors.newCachedThreadPool();
 
-    Flowable<String> flowable(int count) {
+    static Flowable<String> flowable(int count) {
         RequestContext.current();
         return Flowable.create(emitter -> {
             pool.submit(() -> {
@@ -101,10 +98,10 @@ public class RequestContextAssemblyTest {
     }
 
     @Test
-    public void enableTracking() throws Exception {
+    void enableTracking() throws Exception {
         try {
             RequestContextAssembly.enable();
-            final WebClient client = WebClient.of(rule.httpUri());
+            final WebClient client = WebClient.of(server.httpUri());
             assertThat(client.execute(RequestHeaders.of(HttpMethod.GET, "/foo")).aggregate().get().status())
                     .isEqualTo(HttpStatus.OK);
         } finally {
@@ -113,20 +110,20 @@ public class RequestContextAssemblyTest {
     }
 
     @Test
-    public void withoutTracking() throws Exception {
-        final WebClient client = WebClient.of(rule.httpUri());
+    void withoutTracking() throws Exception {
+        final WebClient client = WebClient.of(server.httpUri());
         assertThat(client.execute(RequestHeaders.of(HttpMethod.GET, "/foo")).aggregate().get().status())
                 .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     @Test
-    public void composeWithOtherHook() throws Exception {
+    void composeWithOtherHook() throws Exception {
         final AtomicInteger calledFlag = new AtomicInteger();
         RxJavaPlugins.setOnSingleAssembly(single -> {
             calledFlag.incrementAndGet();
             return single;
         });
-        final WebClient client = WebClient.of(rule.httpUri());
+        final WebClient client = WebClient.of(server.httpUri());
         client.execute(RequestHeaders.of(HttpMethod.GET, "/single")).aggregate().get();
         assertThat(calledFlag.get()).isEqualTo(3);
 

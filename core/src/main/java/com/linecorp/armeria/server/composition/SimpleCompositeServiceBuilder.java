@@ -22,16 +22,13 @@ import com.linecorp.armeria.server.Route;
 /**
  * A general purpose {@link AbstractCompositeServiceBuilder} implementation. Useful when you do not want to
  * define a new dedicated {@link HttpService} builder type.
+ *
+ * @deprecated This class will be removed without a replacement.
  */
+@Deprecated
 public final class SimpleCompositeServiceBuilder extends AbstractCompositeServiceBuilder<HttpService> {
 
-    /**
-     * Creates a new {@link SimpleCompositeServiceBuilder}.
-     *
-     * @deprecated Use {@link SimpleCompositeService#builder()}.
-     */
-    @Deprecated
-    public SimpleCompositeServiceBuilder() {}
+    SimpleCompositeServiceBuilder() {}
 
     @Override
     public SimpleCompositeServiceBuilder serviceUnder(String pathPrefix, HttpService  service) {

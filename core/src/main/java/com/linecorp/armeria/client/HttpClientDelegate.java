@@ -18,7 +18,6 @@ package com.linecorp.armeria.client;
 import static java.util.Objects.requireNonNull;
 
 import java.net.InetSocketAddress;
-import java.util.concurrent.CompletableFuture;
 
 import javax.annotation.Nullable;
 
@@ -26,6 +25,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Strings;
 
 import com.linecorp.armeria.client.HttpChannelPool.PoolKey;
+import com.linecorp.armeria.client.endpoint.EmptyEndpointGroupException;
 import com.linecorp.armeria.common.HttpHeaderNames;
 import com.linecorp.armeria.common.HttpRequest;
 import com.linecorp.armeria.common.HttpResponse;
@@ -45,11 +45,6 @@ import io.netty.util.concurrent.FutureListener;
 
 final class HttpClientDelegate implements HttpClient {
 
-    private static final Throwable CONTEXT_INITIALIZATION_FAILED = new Exception(
-            ClientRequestContext.class.getSimpleName() + " initialization failed", null, false, false) {
-        private static final long serialVersionUID = 837901495421033459L;
-    };
-
     private final HttpClientFactory factory;
     private final AddressResolverGroup<InetSocketAddress> addressResolverGroup;
 
@@ -63,12 +58,20 @@ final class HttpClientDelegate implements HttpClient {
     public HttpResponse execute(ClientRequestContext ctx, HttpRequest req) throws Exception {
         final Endpoint endpoint = ctx.endpoint();
         if (endpoint == null) {
-            // Note that this response will be ignored because:
-            // - `ClientRequestContext.endpoint()` returns `null` only when the context initialization failed.
-            // - `ClientUtil.initContextAndExecuteWithFallback()` will use the fallback response rather than
-            //   what we return here.
-            req.abort(CONTEXT_INITIALIZATION_FAILED);
-            return HttpResponse.ofFailure(CONTEXT_INITIALIZATION_FAILED);
+            // It is possible that we reach here even when `EndpointGroup` is not empty,
+            // because `endpoint` can be `null` for the following two cases:
+            // - `EndpointGroup.select()` returned `null`.
+            // - An exception was raised while context initialization.
+            //
+            // Because all the clean-up is done by `DefaultClientRequestContext.failEarly()`
+            // when context initialization fails with an exception, we can assume that the exception
+            // and response created here will be exposed only when `EndpointGroup.select()` returned `null`.
+            //
+            // See `DefaultClientRequestContext.init()` for more information.
+            final UnprocessedRequestException cause =
+                    new UnprocessedRequestException(EmptyEndpointGroupException.get());
+            handleEarlyRequestException(ctx, req, cause);
+            return HttpResponse.ofFailure(cause);
         }
 
         if (!isValidPath(req)) {
@@ -219,57 +222,18 @@ final class HttpClientDelegate implements HttpClient {
     private static void handleEarlyRequestException(ClientRequestContext ctx,
                                                     HttpRequest req, Throwable cause) {
         try (SafeCloseable ignored = RequestContextUtil.pop()) {
-            req.abort(cause);
             final RequestLogBuilder logBuilder = ctx.logBuilder();
             logBuilder.endRequest(cause);
             logBuilder.endResponse(cause);
+            req.abort(cause);
         }
     }
 
-    private void doExecute(PooledChannel pooledChannel, ClientRequestContext ctx,
-                           HttpRequest req, DecodedHttpResponse res) {
+    private static void doExecute(PooledChannel pooledChannel, ClientRequestContext ctx,
+                                  HttpRequest req, DecodedHttpResponse res) {
         final Channel channel = pooledChannel.get();
-        boolean needsRelease = true;
-        try {
-            final HttpSession session = HttpSession.get(channel);
-            res.init(session.inboundTrafficController());
-            final SessionProtocol sessionProtocol = session.protocol();
-
-            // Should never reach here.
-            if (sessionProtocol == null) {
-                needsRelease = false;
-                try {
-                    // TODO(minwoox): Make a test that handles this case
-                    final NullPointerException cause = new NullPointerException("sessionProtocol");
-                    handleEarlyRequestException(ctx, req, cause);
-                    res.close(cause);
-                } finally {
-                    channel.close();
-                }
-                return;
-            }
-
-            if (session.invoke(ctx, req, res)) {
-                needsRelease = false;
-
-                // Return the channel to the pool.
-                if (!sessionProtocol.isMultiplex()) {
-                    // If pipelining is enabled, return as soon as the request is fully sent.
-                    // If pipelining is disabled, return after the response is fully received.
-                    final CompletableFuture<Void> completionFuture =
-                            factory.useHttp1Pipelining() ? req.whenComplete() : res.whenComplete();
-                    completionFuture.handle((ret, cause) -> {
-                        pooledChannel.release();
-                        return null;
-                    });
-                } else {
-                    // HTTP/2 connections do not need to get returned.
-                }
-            }
-        } finally {
-            if (needsRelease) {
-                pooledChannel.release();
-            }
-        }
+        final HttpSession session = HttpSession.get(channel);
+        res.init(session.inboundTrafficController());
+        session.invoke(pooledChannel, ctx, req, res);
     }
 }

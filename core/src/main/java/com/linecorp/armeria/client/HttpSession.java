@@ -28,6 +28,11 @@ import io.netty.channel.ChannelHandler;
 
 interface HttpSession {
 
+    /**
+     * 2^29 - We could have used 2^30 but this should be large enough.
+     */
+    int MAX_NUM_REQUESTS_SENT = 536870912;
+
     HttpSession INACTIVE = new HttpSession() {
         @Nullable
         @Override
@@ -46,14 +51,19 @@ interface HttpSession {
         }
 
         @Override
-        public int unfinishedResponses() {
-            return 0;
+        public boolean hasUnfinishedResponses() {
+            return false;
         }
 
         @Override
-        public boolean invoke(ClientRequestContext ctx, HttpRequest req, DecodedHttpResponse res) {
-            res.close(ClosedSessionException.get());
+        public boolean incrementNumUnfinishedResponses() {
             return false;
+        }
+
+        @Override
+        public void invoke(PooledChannel pooledChannel, ClientRequestContext ctx,
+                           HttpRequest req, DecodedHttpResponse res) {
+            res.close(ClosedSessionException.get());
         }
 
         @Override
@@ -62,7 +72,17 @@ interface HttpSession {
         }
 
         @Override
+        public boolean isActive() {
+            return false;
+        }
+
+        @Override
         public void deactivate() {}
+
+        @Override
+        public int incrementAndGetNumRequestsSent() {
+            return MAX_NUM_REQUESTS_SENT;
+        }
     };
 
     static HttpSession get(Channel ch) {
@@ -80,19 +100,18 @@ interface HttpSession {
 
     InboundTrafficController inboundTrafficController();
 
-    int unfinishedResponses();
+    boolean hasUnfinishedResponses();
 
-    default boolean hasUnfinishedResponses() {
-        return unfinishedResponses() != 0;
-    }
+    boolean incrementNumUnfinishedResponses();
 
-    default int maxUnfinishedResponses() {
-        return Integer.MAX_VALUE;
-    }
-
-    boolean invoke(ClientRequestContext ctx, HttpRequest req, DecodedHttpResponse res);
+    void invoke(PooledChannel pooledChannel, ClientRequestContext ctx,
+                HttpRequest req, DecodedHttpResponse res);
 
     void retryWithH1C();
 
+    boolean isActive();
+
     void deactivate();
+
+    int incrementAndGetNumRequestsSent();
 }

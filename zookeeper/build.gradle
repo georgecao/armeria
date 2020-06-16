@@ -1,6 +1,7 @@
 dependencies {
     // Curator
     api 'org.apache.curator:curator-recipes'
+    api 'org.apache.curator:curator-x-discovery'
 
     // ZooKeeper
     api 'org.apache.zookeeper:zookeeper'

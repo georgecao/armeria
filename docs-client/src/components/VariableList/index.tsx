@@ -48,7 +48,7 @@ interface Props {
   specification: Specification;
 }
 
-export default function({ title, variables, specification }: Props) {
+export default function ({ title, variables, specification }: Props) {
   const hasBean = variables.some(
     (variable) =>
       !!variable.childFieldInfos && variable.childFieldInfos.length > 0,
@@ -113,7 +113,7 @@ const indentString = (indent: number, s: string): string => {
 
 const formatRequirement = (s: string): string => {
   const lowerCase = s.toLowerCase();
-  if ('unspecified' === lowerCase) {
+  if (lowerCase === 'unspecified') {
     return '-';
   }
 
@@ -205,6 +205,7 @@ const FieldInfos: React.FunctionComponent<FieldInfosProps> = (props) => {
           <FieldInfo
             hasLocation={props.hasLocation}
             hidden={props.hidden}
+            // eslint-disable-next-line react/no-array-index-key
             key={`${variable.name}-${index}`}
             indent={props.indent}
             variable={variable}

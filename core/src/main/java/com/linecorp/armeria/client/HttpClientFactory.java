@@ -30,6 +30,8 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import javax.annotation.Nullable;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,12 +39,15 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.MapMaker;
 
+import com.linecorp.armeria.client.endpoint.EndpointGroup;
+import com.linecorp.armeria.client.proxy.ProxyConfig;
 import com.linecorp.armeria.common.RequestContext;
 import com.linecorp.armeria.common.Scheme;
 import com.linecorp.armeria.common.SerializationFormat;
 import com.linecorp.armeria.common.SessionProtocol;
 import com.linecorp.armeria.common.util.AsyncCloseableSupport;
 import com.linecorp.armeria.common.util.ReleasableHolder;
+import com.linecorp.armeria.internal.common.util.SslContextUtil;
 import com.linecorp.armeria.internal.common.util.TransportType;
 
 import io.micrometer.core.instrument.MeterRegistry;
@@ -51,6 +56,7 @@ import io.netty.channel.ChannelFactory;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoop;
 import io.netty.channel.EventLoopGroup;
+import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.resolver.AddressResolverGroup;
 import io.netty.util.concurrent.FutureListener;
@@ -73,7 +79,8 @@ final class HttpClientFactory implements ClientFactory {
     private final EventLoopGroup workerGroup;
     private final boolean shutdownWorkerGroupOnClose;
     private final Bootstrap baseBootstrap;
-    private final List<Consumer<? super SslContextBuilder>> tlsCustomizers;
+    private final SslContext sslCtxHttp1Or2;
+    private final SslContext sslCtxHttp1Only;
     private final AddressResolverGroup<InetSocketAddress> addressResolverGroup;
     private final int http2InitialConnectionWindowSize;
     private final int http2InitialStreamWindowSize;
@@ -83,10 +90,12 @@ final class HttpClientFactory implements ClientFactory {
     private final int http1MaxHeaderSize;
     private final int http1MaxChunkSize;
     private final long idleTimeoutMillis;
+    private final long pingIntervalMillis;
     private final boolean useHttp2Preface;
     private final boolean useHttp1Pipelining;
     private final ConnectionPoolListener connectionPoolListener;
     private MeterRegistry meterRegistry;
+    private final ProxyConfig proxyConfig;
 
     private final ConcurrentMap<EventLoop, HttpChannelPool> pools = new MapMaker().weakKeys().makeMap();
     private final HttpClientDelegate clientDelegate;
@@ -116,14 +125,19 @@ final class HttpClientFactory implements ClientFactory {
             bootstrap.option(castOption, value);
         });
 
+        final ImmutableList<? extends Consumer<? super SslContextBuilder>> tlsCustomizers =
+                ImmutableList.of(options.tlsCustomizer());
+
         shutdownWorkerGroupOnClose = options.shutdownWorkerGroupOnClose();
         eventLoopScheduler = options.eventLoopSchedulerFactory().apply(workerGroup);
         baseBootstrap = bootstrap;
-        tlsCustomizers = ImmutableList.of(options.tlsCustomizer());
+        sslCtxHttp1Or2 = SslContextUtil.createSslContext(SslContextBuilder::forClient, false, tlsCustomizers);
+        sslCtxHttp1Only = SslContextUtil.createSslContext(SslContextBuilder::forClient, true, tlsCustomizers);
         http2InitialConnectionWindowSize = options.http2InitialConnectionWindowSize();
         http2InitialStreamWindowSize = options.http2InitialStreamWindowSize();
         http2MaxFrameSize = options.http2MaxFrameSize();
         http2MaxHeaderListSize = options.http2MaxHeaderListSize();
+        pingIntervalMillis = options.pingIntervalMillis();
         http1MaxInitialLineLength = options.http1MaxInitialLineLength();
         http1MaxHeaderSize = options.http1MaxHeaderSize();
         http1MaxChunkSize = options.http1MaxChunkSize();
@@ -132,6 +146,7 @@ final class HttpClientFactory implements ClientFactory {
         useHttp1Pipelining = options.useHttp1Pipelining();
         connectionPoolListener = options.connectionPoolListener();
         meterRegistry = options.meterRegistry();
+        proxyConfig = options.proxyConfig();
 
         this.options = options;
 
@@ -144,10 +159,6 @@ final class HttpClientFactory implements ClientFactory {
      */
     Bootstrap newBootstrap() {
         return baseBootstrap.clone();
-    }
-
-    List<Consumer<? super SslContextBuilder>> tlsCustomizers() {
-        return tlsCustomizers;
     }
 
     int http2InitialConnectionWindowSize() {
@@ -182,6 +193,10 @@ final class HttpClientFactory implements ClientFactory {
         return idleTimeoutMillis;
     }
 
+    long pingIntervalMillis() {
+        return pingIntervalMillis;
+    }
+
     boolean useHttp2Preface() {
         return useHttp2Preface;
     }
@@ -192,6 +207,10 @@ final class HttpClientFactory implements ClientFactory {
 
     ConnectionPoolListener connectionPoolListener() {
         return connectionPoolListener;
+    }
+
+    ProxyConfig proxyConfig() {
+        return proxyConfig;
     }
 
     @VisibleForTesting
@@ -215,8 +234,10 @@ final class HttpClientFactory implements ClientFactory {
     }
 
     @Override
-    public ReleasableHolder<EventLoop> acquireEventLoop(Endpoint endpoint, SessionProtocol sessionProtocol) {
-        return eventLoopScheduler.acquire(endpoint, sessionProtocol);
+    public ReleasableHolder<EventLoop> acquireEventLoop(SessionProtocol sessionProtocol,
+                                                        EndpointGroup endpointGroup,
+                                                        @Nullable Endpoint endpoint) {
+        return eventLoopScheduler.acquire(sessionProtocol, endpointGroup, endpoint);
     }
 
     @Override
@@ -331,6 +352,8 @@ final class HttpClientFactory implements ClientFactory {
         }
 
         return pools.computeIfAbsent(eventLoop,
-                                     e -> new HttpChannelPool(this, eventLoop, connectionPoolListener()));
+                                     e -> new HttpChannelPool(this, eventLoop,
+                                                              sslCtxHttp1Or2, sslCtxHttp1Only,
+                                                              connectionPoolListener()));
     }
 }

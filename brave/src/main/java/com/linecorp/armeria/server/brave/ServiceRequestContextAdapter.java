@@ -30,7 +30,6 @@ import com.linecorp.armeria.server.Route;
 import com.linecorp.armeria.server.ServiceRequestContext;
 
 import brave.Span;
-import brave.http.HttpServerAdapter;
 import brave.http.HttpServerHandler;
 
 /**
@@ -52,11 +51,11 @@ final class ServiceRequestContextAdapter {
 
         /**
          * This sets the client IP:port to the {@link RequestContext#remoteAddress()}
-         * if the {@linkplain HttpServerAdapter#parseClientIpAndPort default parsing} fails.
+         * if the {@linkplain #parseClientIpFromXForwardedFor default parsing} fails.
          */
         @Override
         public boolean parseClientIpAndPort(Span span) {
-            return SpanTags.updateRemoteEndpoint(span, ctx);
+            return parseClientIpFromXForwardedFor(span) || SpanTags.updateRemoteEndpoint(span, ctx);
         }
 
         @Override
@@ -69,16 +68,27 @@ final class ServiceRequestContextAdapter {
             return ctx.method().name();
         }
 
-        /**
-         * Original implementation is calling {@link HttpServerAdapter#url(Object)} which needs {@link
-         * RequestLog#scheme()}, but because {@link RequestLog#scheme()} is not always available, we need to
-         * use {@link RequestContext#path()} directly.
-         *
-         * @see brave.http.HttpServerRequest#path()
-         */
         @Override
         public String path() {
             return ctx.path();
+        }
+
+        @Override
+        @Nullable
+        public String route() {
+            final Route route = ctx.config().route();
+            final List<String> paths = route.paths();
+            switch (route.pathType()) {
+                case EXACT:
+                case PREFIX:
+                case PARAMETERIZED:
+                    return paths.get(1);
+                case REGEX:
+                    return paths.get(paths.size() - 1);
+                case REGEX_WITH_PREFIX:
+                    return paths.get(1) + paths.get(0);
+            }
+            return null;
         }
 
         @Override
@@ -99,8 +109,9 @@ final class ServiceRequestContextAdapter {
         }
     }
 
-    static brave.http.HttpServerResponse asHttpServerResponse(RequestLog log) {
-        return new HttpServerResponse(log);
+    static brave.http.HttpServerResponse asHttpServerResponse(
+            RequestLog log, brave.http.HttpServerRequest request) {
+        return new HttpServerResponse(log, request);
     }
 
     /**
@@ -109,10 +120,12 @@ final class ServiceRequestContextAdapter {
     @SuppressWarnings("ClassNameSameAsAncestorName")
     private static final class HttpServerResponse extends brave.http.HttpServerResponse {
         private final RequestLog log;
+        private final brave.http.HttpServerRequest request;
 
-        HttpServerResponse(RequestLog log) {
+        HttpServerResponse(RequestLog log, brave.http.HttpServerRequest request) {
             assert log.isComplete() : log;
             this.log = log;
+            this.request = request;
         }
 
         @Override
@@ -121,31 +134,19 @@ final class ServiceRequestContextAdapter {
         }
 
         @Override
+        @Nullable
+        public Throwable error() {
+            return log.responseCause();
+        }
+
+        @Override
         public int statusCode() {
             return log.responseHeaders().status().code();
         }
 
         @Override
-        public String method() {
-            return log.requestHeaders().method().name();
-        }
-
-        @Override
-        @Nullable
-        public String route() {
-            final Route route = ((ServiceRequestContext) log.context()).route();
-            final List<String> paths = route.paths();
-            switch (route.pathType()) {
-                case EXACT:
-                case PREFIX:
-                case PARAMETERIZED:
-                    return paths.get(1);
-                case REGEX:
-                    return paths.get(paths.size() - 1);
-                case REGEX_WITH_PREFIX:
-                    return paths.get(1) + paths.get(0);
-            }
-            return null;
+        public brave.http.HttpServerRequest request() {
+            return request;
         }
 
         @Override

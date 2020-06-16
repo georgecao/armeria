@@ -25,8 +25,10 @@ import com.linecorp.armeria.common.ClosedSessionException;
 import com.linecorp.armeria.common.ContentTooLargeException;
 import com.linecorp.armeria.common.HttpData;
 import com.linecorp.armeria.common.ProtocolViolationException;
+import com.linecorp.armeria.common.stream.ClosedStreamException;
 import com.linecorp.armeria.internal.common.ArmeriaHttpUtil;
 import com.linecorp.armeria.internal.common.InboundTrafficController;
+import com.linecorp.armeria.internal.common.KeepAliveHandler;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
@@ -57,7 +59,10 @@ final class Http1ResponseDecoder extends HttpResponseDecoder implements ChannelI
     /** The request being decoded currently. */
     @Nullable
     private HttpResponseWrapper res;
+    @Nullable
+    private KeepAliveHandler keepAliveHandler;
     private int resId = 1;
+    private int lastPingReqId = -1;
     private State state = State.NEED_HEADERS;
 
     Http1ResponseDecoder(Channel channel) {
@@ -96,13 +101,18 @@ final class Http1ResponseDecoder extends HttpResponseDecoder implements ChannelI
     }
 
     @Override
-    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {}
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+        maybeInitializeKeepAliveHandler(ctx);
+    }
 
     @Override
-    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {}
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+        destroyKeepAliveHandler();
+    }
 
     @Override
     public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
+        maybeInitializeKeepAliveHandler(ctx);
         ctx.fireChannelRegistered();
     }
 
@@ -113,6 +123,7 @@ final class Http1ResponseDecoder extends HttpResponseDecoder implements ChannelI
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        maybeInitializeKeepAliveHandler(ctx);
         ctx.fireChannelActive();
     }
 
@@ -121,6 +132,7 @@ final class Http1ResponseDecoder extends HttpResponseDecoder implements ChannelI
         if (res != null) {
             res.close(ClosedSessionException.get());
         }
+        destroyKeepAliveHandler();
         ctx.fireChannelInactive();
     }
 
@@ -128,6 +140,12 @@ final class Http1ResponseDecoder extends HttpResponseDecoder implements ChannelI
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (!(msg instanceof HttpObject)) {
             ctx.fireChannelRead(msg);
+            return;
+        }
+
+        if (isPing()) {
+            onPingRead(msg);
+            ReferenceCountUtil.release(msg);
             return;
         }
 
@@ -159,16 +177,19 @@ final class Http1ResponseDecoder extends HttpResponseDecoder implements ChannelI
                         }
 
                         res.initTimeout();
-                        res.tryWrite(ArmeriaHttpUtil.toArmeria(nettyRes));
+                        if (!res.tryWrite(ArmeriaHttpUtil.toArmeria(nettyRes))) {
+                            fail(ctx, ClosedStreamException.get());
+                            return;
+                        }
                     } else {
-                        failWithUnexpectedMessageType(ctx, msg);
+                        failWithUnexpectedMessageType(ctx, msg, HttpResponse.class);
                     }
                     break;
                 case NEED_INFORMATIONAL_DATA:
                     if (msg instanceof LastHttpContent) {
                         state = State.NEED_HEADERS;
                     } else {
-                        failWithUnexpectedMessageType(ctx, msg);
+                        failWithUnexpectedMessageType(ctx, msg, LastHttpContent.class);
                     }
                     break;
                 case NEED_DATA_OR_TRAILERS:
@@ -188,8 +209,9 @@ final class Http1ResponseDecoder extends HttpResponseDecoder implements ChannelI
                             if (maxContentLength > 0 && res.writtenBytes() > maxContentLength - dataLength) {
                                 fail(ctx, ContentTooLargeException.get());
                                 return;
-                            } else {
-                                res.tryWrite(HttpData.wrap(data.retain()));
+                            } else if (!res.tryWrite(HttpData.wrap(data.retain()))) {
+                                fail(ctx, ClosedStreamException.get());
+                                return;
                             }
                         }
 
@@ -202,8 +224,10 @@ final class Http1ResponseDecoder extends HttpResponseDecoder implements ChannelI
                             state = State.NEED_HEADERS;
 
                             final HttpHeaders trailingHeaders = ((LastHttpContent) msg).trailingHeaders();
-                            if (!trailingHeaders.isEmpty()) {
-                                res.tryWrite(ArmeriaHttpUtil.toArmeria(trailingHeaders));
+                            if (!trailingHeaders.isEmpty() &&
+                                !res.tryWrite(ArmeriaHttpUtil.toArmeria(trailingHeaders))) {
+                                fail(ctx, ClosedStreamException.get());
+                                return;
                             }
 
                             res.close();
@@ -213,7 +237,7 @@ final class Http1ResponseDecoder extends HttpResponseDecoder implements ChannelI
                             }
                         }
                     } else {
-                        failWithUnexpectedMessageType(ctx, msg);
+                        failWithUnexpectedMessageType(ctx, msg, HttpContent.class);
                     }
                     break;
                 case DISCARD:
@@ -224,9 +248,10 @@ final class Http1ResponseDecoder extends HttpResponseDecoder implements ChannelI
         }
     }
 
-    private void failWithUnexpectedMessageType(ChannelHandlerContext ctx, Object msg) {
+    private void failWithUnexpectedMessageType(ChannelHandlerContext ctx, Object msg, Class<?> expected) {
         fail(ctx, new ProtocolViolationException(
-                "unexpected message type: " + msg.getClass().getName()));
+                "unexpected message type: " + msg.getClass().getName() +
+                " (expected: " + expected.getName() + ')'));
     }
 
     private void fail(ChannelHandlerContext ctx, Throwable cause) {
@@ -262,5 +287,49 @@ final class Http1ResponseDecoder extends HttpResponseDecoder implements ChannelI
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         ctx.fireExceptionCaught(cause);
+    }
+
+    void setKeepAliveHandler(ChannelHandlerContext ctx, KeepAliveHandler keepAliveHandler) {
+        this.keepAliveHandler = keepAliveHandler;
+        maybeInitializeKeepAliveHandler(ctx);
+    }
+
+    private void maybeInitializeKeepAliveHandler(ChannelHandlerContext ctx) {
+        if (keepAliveHandler != null && ctx.channel().isActive()) {
+            keepAliveHandler.initialize(ctx);
+        }
+    }
+
+    private void destroyKeepAliveHandler() {
+        if (keepAliveHandler != null) {
+            keepAliveHandler.destroy();
+        }
+    }
+
+    private void onPingRead(Object msg) {
+        if (msg instanceof HttpResponse) {
+            assert keepAliveHandler != null;
+            keepAliveHandler.onPing();
+        }
+        if (msg instanceof LastHttpContent) {
+            onPingComplete();
+        }
+    }
+
+    void setPingReqId(int id) {
+        lastPingReqId = id;
+    }
+
+    boolean isPingReqId(int id) {
+        return lastPingReqId == id;
+    }
+
+    private boolean isPing() {
+        return lastPingReqId == resId;
+    }
+
+    private void onPingComplete() {
+        lastPingReqId = -1;
+        resId++;
     }
 }

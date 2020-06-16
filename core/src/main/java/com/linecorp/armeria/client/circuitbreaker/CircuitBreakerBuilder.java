@@ -34,51 +34,34 @@ import com.linecorp.armeria.common.util.Ticker;
  */
 public final class CircuitBreakerBuilder {
 
-    private static final class Defaults {
-
-        private static final double FAILURE_RATE_THRESHOLD = 0.5;
-
-        private static final long MINIMUM_REQUEST_THRESHOLD = 10;
-
-        private static final int TRIAL_REQUEST_INTERVAL_SECONDS = 3;
-
-        private static final int CIRCUIT_OPEN_WINDOW_SECONDS = 10;
-
-        private static final int COUNTER_SLIDING_WINDOW_SECONDS = 20;
-
-        private static final int COUNTER_UPDATE_INTERVAL_SECONDS = 1;
-
-        private static final Ticker TICKER = Ticker.systemTicker();
-    }
+    private static final double DEFAULT_FAILURE_RATE_THRESHOLD = 0.5;
+    private static final long DEFAULT_MINIMUM_REQUEST_THRESHOLD = 10;
+    private static final int DEFAULT_TRIAL_REQUEST_INTERVAL_SECONDS = 3;
+    private static final int DEFAULT_CIRCUIT_OPEN_WINDOW_SECONDS = 10;
+    private static final int DEFAULT_COUNTER_SLIDING_WINDOW_SECONDS = 20;
+    private static final int DEFAULT_COUNTER_UPDATE_INTERVAL_SECONDS = 1;
+    private static final Ticker DEFAULT_TICKER = Ticker.systemTicker();
 
     @Nullable
     private final String name;
 
-    private double failureRateThreshold = Defaults.FAILURE_RATE_THRESHOLD;
+    private double failureRateThreshold = DEFAULT_FAILURE_RATE_THRESHOLD;
 
-    private long minimumRequestThreshold = Defaults.MINIMUM_REQUEST_THRESHOLD;
+    private long minimumRequestThreshold = DEFAULT_MINIMUM_REQUEST_THRESHOLD;
 
-    private Duration trialRequestInterval = Duration.ofSeconds(Defaults.TRIAL_REQUEST_INTERVAL_SECONDS);
+    private Duration trialRequestInterval = Duration.ofSeconds(DEFAULT_TRIAL_REQUEST_INTERVAL_SECONDS);
 
-    private Duration circuitOpenWindow = Duration.ofSeconds(Defaults.CIRCUIT_OPEN_WINDOW_SECONDS);
+    private Duration circuitOpenWindow = Duration.ofSeconds(DEFAULT_CIRCUIT_OPEN_WINDOW_SECONDS);
 
-    private Duration counterSlidingWindow = Duration.ofSeconds(Defaults.COUNTER_SLIDING_WINDOW_SECONDS);
+    private Duration counterSlidingWindow = Duration.ofSeconds(DEFAULT_COUNTER_SLIDING_WINDOW_SECONDS);
 
-    private Duration counterUpdateInterval = Duration.ofSeconds(Defaults.COUNTER_UPDATE_INTERVAL_SECONDS);
+    private Duration counterUpdateInterval = Duration.ofSeconds(DEFAULT_COUNTER_UPDATE_INTERVAL_SECONDS);
 
-    private Ticker ticker = Defaults.TICKER;
+    private Ticker ticker = DEFAULT_TICKER;
 
     private List<CircuitBreakerListener> listeners = Collections.emptyList();
 
-    /**
-     * Creates a new {@link CircuitBreakerBuilder} with the specified name.
-     *
-     * @param name The name of the circuit breaker.
-     *
-     * @deprecated Use {@link CircuitBreaker#builder(String)}.
-     */
-    @Deprecated
-    public CircuitBreakerBuilder(String name) {
+    CircuitBreakerBuilder(String name) {
         requireNonNull(name, "name");
         if (name.isEmpty()) {
             throw new IllegalArgumentException("name: <empty> (expected: a non-empty string)");
@@ -86,19 +69,13 @@ public final class CircuitBreakerBuilder {
         this.name = name;
     }
 
-    /**
-     * Creates a new {@link CircuitBreakerBuilder}.
-     *
-     * @deprecated Use {@link CircuitBreaker#builder()}.
-     */
-    @Deprecated
-    public CircuitBreakerBuilder() {
+    CircuitBreakerBuilder() {
         name = null;
     }
 
     /**
      * Sets the threshold of failure rate to detect a remote service fault.
-     * Defaults to {@value Defaults#FAILURE_RATE_THRESHOLD} if unspecified.
+     * Defaults to {@value #DEFAULT_FAILURE_RATE_THRESHOLD} if unspecified.
      *
      * @param failureRateThreshold The rate between 0 (exclusive) and 1 (inclusive)
      */
@@ -113,7 +90,7 @@ public final class CircuitBreakerBuilder {
 
     /**
      * Sets the minimum number of requests within a time window necessary to detect a remote service fault.
-     * Defaults to {@value Defaults#MINIMUM_REQUEST_THRESHOLD} if unspecified.
+     * Defaults to {@value #DEFAULT_MINIMUM_REQUEST_THRESHOLD} if unspecified.
      */
     public CircuitBreakerBuilder minimumRequestThreshold(long minimumRequestThreshold) {
         if (minimumRequestThreshold < 0) {
@@ -126,7 +103,7 @@ public final class CircuitBreakerBuilder {
 
     /**
      * Sets the trial request interval in HALF_OPEN state.
-     * Defaults to {@value Defaults#TRIAL_REQUEST_INTERVAL_SECONDS} seconds if unspecified.
+     * Defaults to {@value #DEFAULT_TRIAL_REQUEST_INTERVAL_SECONDS} seconds if unspecified.
      */
     public CircuitBreakerBuilder trialRequestInterval(Duration trialRequestInterval) {
         requireNonNull(trialRequestInterval, "trialRequestInterval");
@@ -140,7 +117,7 @@ public final class CircuitBreakerBuilder {
 
     /**
      * Sets the trial request interval in HALF_OPEN state in milliseconds.
-     * Defaults to {@value Defaults#TRIAL_REQUEST_INTERVAL_SECONDS} seconds if unspecified.
+     * Defaults to {@value #DEFAULT_TRIAL_REQUEST_INTERVAL_SECONDS} seconds if unspecified.
      */
     public CircuitBreakerBuilder trialRequestIntervalMillis(long trialRequestIntervalMillis) {
         trialRequestInterval(Duration.ofMillis(trialRequestIntervalMillis));
@@ -149,7 +126,7 @@ public final class CircuitBreakerBuilder {
 
     /**
      * Sets the duration of OPEN state.
-     * Defaults to {@value Defaults#CIRCUIT_OPEN_WINDOW_SECONDS} seconds if unspecified.
+     * Defaults to {@value #DEFAULT_CIRCUIT_OPEN_WINDOW_SECONDS} seconds if unspecified.
      */
     public CircuitBreakerBuilder circuitOpenWindow(Duration circuitOpenWindow) {
         requireNonNull(circuitOpenWindow, "circuitOpenWindow");
@@ -163,7 +140,7 @@ public final class CircuitBreakerBuilder {
 
     /**
      * Sets the duration of OPEN state in milliseconds.
-     * Defaults to {@value Defaults#CIRCUIT_OPEN_WINDOW_SECONDS} seconds if unspecified.
+     * Defaults to {@value #DEFAULT_CIRCUIT_OPEN_WINDOW_SECONDS} seconds if unspecified.
      */
     public CircuitBreakerBuilder circuitOpenWindowMillis(long circuitOpenWindowMillis) {
         circuitOpenWindow(Duration.ofMillis(circuitOpenWindowMillis));
@@ -172,7 +149,7 @@ public final class CircuitBreakerBuilder {
 
     /**
      * Sets the time length of sliding window to accumulate the count of events.
-     * Defaults to {@value Defaults#COUNTER_SLIDING_WINDOW_SECONDS} seconds if unspecified.
+     * Defaults to {@value #DEFAULT_COUNTER_SLIDING_WINDOW_SECONDS} seconds if unspecified.
      */
     public CircuitBreakerBuilder counterSlidingWindow(Duration counterSlidingWindow) {
         requireNonNull(counterSlidingWindow, "counterSlidingWindow");
@@ -186,7 +163,7 @@ public final class CircuitBreakerBuilder {
 
     /**
      * Sets the time length of sliding window to accumulate the count of events, in milliseconds.
-     * Defaults to {@value Defaults#COUNTER_SLIDING_WINDOW_SECONDS} seconds if unspecified.
+     * Defaults to {@value #DEFAULT_COUNTER_SLIDING_WINDOW_SECONDS} seconds if unspecified.
      */
     public CircuitBreakerBuilder counterSlidingWindowMillis(long counterSlidingWindowMillis) {
         counterSlidingWindow(Duration.ofMillis(counterSlidingWindowMillis));
@@ -195,7 +172,7 @@ public final class CircuitBreakerBuilder {
 
     /**
      * Sets the interval that a circuit breaker can see the latest accumulated count of events.
-     * Defaults to {@value Defaults#COUNTER_UPDATE_INTERVAL_SECONDS} second if unspecified.
+     * Defaults to {@value #DEFAULT_COUNTER_UPDATE_INTERVAL_SECONDS} second if unspecified.
      */
     public CircuitBreakerBuilder counterUpdateInterval(Duration counterUpdateInterval) {
         requireNonNull(counterUpdateInterval, "counterUpdateInterval");
@@ -209,7 +186,7 @@ public final class CircuitBreakerBuilder {
 
     /**
      * Sets the interval that a circuit breaker can see the latest accumulated count of events, in milliseconds.
-     * Defaults to {@value Defaults#COUNTER_UPDATE_INTERVAL_SECONDS} second if unspecified.
+     * Defaults to {@value #DEFAULT_COUNTER_UPDATE_INTERVAL_SECONDS} second if unspecified.
      */
     public CircuitBreakerBuilder counterUpdateIntervalMillis(long counterUpdateIntervalMillis) {
         counterUpdateInterval(Duration.ofMillis(counterUpdateIntervalMillis));

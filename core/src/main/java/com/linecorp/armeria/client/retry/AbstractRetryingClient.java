@@ -39,6 +39,11 @@ import com.linecorp.armeria.common.Request;
 import com.linecorp.armeria.common.RequestId;
 import com.linecorp.armeria.common.Response;
 import com.linecorp.armeria.common.RpcRequest;
+import com.linecorp.armeria.common.logging.RequestLog;
+import com.linecorp.armeria.common.logging.RequestLogAccess;
+import com.linecorp.armeria.common.logging.RequestLogBuilder;
+import com.linecorp.armeria.common.logging.RequestLogProperty;
+import com.linecorp.armeria.common.util.TimeoutMode;
 
 import io.netty.util.AsciiString;
 import io.netty.util.AttributeKey;
@@ -65,10 +70,13 @@ public abstract class AbstractRetryingClient<I extends Request, O extends Respon
             AttributeKey.valueOf(AbstractRetryingClient.class, "STATE");
 
     @Nullable
-    private final RetryStrategy retryStrategy;
+    private final RetryRule retryRule;
 
     @Nullable
-    private final RetryStrategyWithContent<O> retryStrategyWithContent;
+    private final RetryRule fromRetryRuleWithContent;
+
+    @Nullable
+    private final RetryRuleWithContent<O> retryRuleWithContent;
 
     private final int maxTotalAttempts;
     private final long responseTimeoutMillisForEachAttempt;
@@ -76,31 +84,36 @@ public abstract class AbstractRetryingClient<I extends Request, O extends Respon
     /**
      * Creates a new instance that decorates the specified {@link Client}.
      */
-    protected AbstractRetryingClient(Client<I, O> delegate, RetryStrategy retryStrategy,
-                                     int maxTotalAttempts, long responseTimeoutMillisForEachAttempt) {
-        this(delegate, requireNonNull(retryStrategy, "retryStrategyWithoutContent"), null,
+    AbstractRetryingClient(Client<I, O> delegate, RetryRule retryRule,
+                           int maxTotalAttempts, long responseTimeoutMillisForEachAttempt) {
+        this(delegate, requireNonNull(retryRule, "retryRule"), null,
              maxTotalAttempts, responseTimeoutMillisForEachAttempt);
     }
 
     /**
      * Creates a new instance that decorates the specified {@link Client}.
      */
-    protected AbstractRetryingClient(Client<I, O> delegate,
-                                     RetryStrategyWithContent<O> retryStrategyWithContent,
-                                     int maxTotalAttempts, long responseTimeoutMillisForEachAttempt) {
-        this(delegate, null, requireNonNull(retryStrategyWithContent, "retryStrategyWithContent"),
+    AbstractRetryingClient(Client<I, O> delegate,
+                           RetryRuleWithContent<O> retryRuleWithContent,
+                           int maxTotalAttempts, long responseTimeoutMillisForEachAttempt) {
+        this(delegate, null, requireNonNull(retryRuleWithContent, "retryRuleWithContent"),
              maxTotalAttempts, responseTimeoutMillisForEachAttempt);
     }
 
     /**
      * Creates a new instance that decorates the specified {@link Client}.
      */
-    private AbstractRetryingClient(Client<I, O> delegate, @Nullable RetryStrategy retryStrategy,
-                                   @Nullable RetryStrategyWithContent<O> retryStrategyWithContent,
+    private AbstractRetryingClient(Client<I, O> delegate, @Nullable RetryRule retryRule,
+                                   @Nullable RetryRuleWithContent<O> retryRuleWithContent,
                                    int maxTotalAttempts, long responseTimeoutMillisForEachAttempt) {
         super(delegate);
-        this.retryStrategy = retryStrategy;
-        this.retryStrategyWithContent = retryStrategyWithContent;
+        this.retryRule = retryRule;
+        this.retryRuleWithContent = retryRuleWithContent;
+        if (retryRuleWithContent != null) {
+            fromRetryRuleWithContent = RetryRuleUtil.fromRetryRuleWithContent(retryRuleWithContent);
+        } else {
+            fromRetryRuleWithContent = null;
+        }
 
         checkArgument(maxTotalAttempts > 0, "maxTotalAttempts: %s (expected: > 0)", maxTotalAttempts);
         this.maxTotalAttempts = maxTotalAttempts;
@@ -133,23 +146,28 @@ public abstract class AbstractRetryingClient<I extends Request, O extends Respon
     }
 
     /**
-     * Returns the {@link RetryStrategy}.
+     * Returns the {@link RetryRule}.
      *
-     * @throws IllegalStateException if the {@link RetryStrategy} is not set
+     * @throws IllegalStateException if the {@link RetryRule} is not set
      */
-    protected RetryStrategy retryStrategy() {
-        checkState(retryStrategy != null, "retryStrategy is not set.");
-        return retryStrategy;
+    protected final RetryRule retryRule() {
+        checkState(retryRule != null, "retryRule is not set.");
+        return retryRule;
     }
 
     /**
-     * Returns the {@link RetryStrategyWithContent}.
+     * Returns the {@link RetryRuleWithContent}.
      *
-     * @throws IllegalStateException if the {@link RetryStrategyWithContent} is not set
+     * @throws IllegalStateException if the {@link RetryRuleWithContent} is not set
      */
-    protected RetryStrategyWithContent<O> retryStrategyWithContent() {
-        checkState(retryStrategyWithContent != null, "retryStrategyWithContent is not set.");
-        return retryStrategyWithContent;
+    protected final RetryRuleWithContent<O> retryRuleWithContent() {
+        checkState(retryRuleWithContent != null, "retryRuleWithContent is not set.");
+        return retryRuleWithContent;
+    }
+
+    RetryRule fromRetryRuleWithContent() {
+        checkState(retryRuleWithContent != null, "retryRuleWithContent is not set.");
+        return fromRetryRuleWithContent;
     }
 
     /**
@@ -170,6 +188,9 @@ public abstract class AbstractRetryingClient<I extends Request, O extends Respon
                         // future is cancelled when the client factory is closed.
                         actionOnException.accept(new IllegalStateException(
                                 ClientFactory.class.getSimpleName() + " has been closed."));
+                    } else if (future.cause() != null) {
+                        // Other unexpected exceptions.
+                        actionOnException.accept(future.cause());
                     }
                 });
             }
@@ -193,7 +214,7 @@ public abstract class AbstractRetryingClient<I extends Request, O extends Respon
             ctx.clearResponseTimeout();
             return true;
         } else {
-            ctx.setResponseTimeoutAfterMillis(responseTimeoutMillis);
+            ctx.setResponseTimeoutMillis(TimeoutMode.SET_FROM_NOW, responseTimeoutMillis);
             return true;
         }
     }
@@ -270,11 +291,57 @@ public abstract class AbstractRetryingClient<I extends Request, O extends Respon
                                                             boolean initialAttempt) {
         final RequestId id = ctx.options().requestIdGenerator().get();
         final EndpointGroup endpointGroup = ctx.endpointGroup();
+        final ClientRequestContext derived;
         if (endpointGroup != null && !initialAttempt) {
-            return ctx.newDerivedContext(id, req, rpcReq, endpointGroup.select(ctx));
+            derived = ctx.newDerivedContext(id, req, rpcReq, endpointGroup.select(ctx));
         } else {
-            return ctx.newDerivedContext(id, req, rpcReq);
+            derived = ctx.newDerivedContext(id, req, rpcReq);
         }
+
+        final RequestLogAccess parentLog = ctx.log();
+        final RequestLog partial = parentLog.partial();
+        final RequestLogBuilder logBuilder = derived.logBuilder();
+        // serializationFormat is always not null, so this is fine.
+        logBuilder.serializationFormat(partial.serializationFormat());
+        if (parentLog.isAvailable(RequestLogProperty.NAME)) {
+            final String name = partial.name();
+            if (name != null) {
+                logBuilder.name(name);
+            }
+        }
+
+        final RequestLogBuilder parentLogBuilder = ctx.logBuilder();
+        if (parentLogBuilder.isDeferRequestContentSet()) {
+            logBuilder.deferRequestContent();
+        }
+        parentLog.whenAvailable(RequestLogProperty.REQUEST_CONTENT).thenApply(requestLog -> {
+            logBuilder.requestContent(requestLog.requestContent(), requestLog.rawRequestContent());
+            return null;
+        });
+        if (parentLogBuilder.isDeferRequestContentPreviewSet()) {
+            logBuilder.deferRequestContentPreview();
+        }
+        parentLog.whenAvailable(RequestLogProperty.REQUEST_CONTENT_PREVIEW).thenApply(requestLog -> {
+            logBuilder.requestContentPreview(requestLog.requestContentPreview());
+            return null;
+        });
+
+        // Propagates the response content only when deferResponseContent is called.
+        if (parentLogBuilder.isDeferResponseContentSet()) {
+            logBuilder.deferResponseContent();
+            parentLog.whenAvailable(RequestLogProperty.RESPONSE_CONTENT).thenApply(requestLog -> {
+                logBuilder.responseContent(requestLog.responseContent(), requestLog.rawResponseContent());
+                return null;
+            });
+        }
+        if (parentLogBuilder.isDeferResponseContentPreviewSet()) {
+            logBuilder.deferResponseContentPreview();
+            parentLog.whenAvailable(RequestLogProperty.RESPONSE_CONTENT_PREVIEW).thenApply(requestLog -> {
+                logBuilder.responseContentPreview(requestLog.responseContentPreview());
+                return null;
+            });
+        }
+        return derived;
     }
 
     private static class State {
@@ -282,6 +349,7 @@ public abstract class AbstractRetryingClient<I extends Request, O extends Respon
         private final int maxTotalAttempts;
         private final long responseTimeoutMillisForEachAttempt;
         private final long deadlineNanos;
+        private final boolean isTimeoutEnabled;
 
         @Nullable
         private Backoff lastBackoff;
@@ -294,8 +362,10 @@ public abstract class AbstractRetryingClient<I extends Request, O extends Respon
 
             if (responseTimeoutMillis <= 0 || responseTimeoutMillis == Long.MAX_VALUE) {
                 deadlineNanos = 0;
+                isTimeoutEnabled = false;
             } else {
                 deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(responseTimeoutMillis);
+                isTimeoutEnabled = true;
             }
             totalAttemptNo = 1;
         }
@@ -327,7 +397,7 @@ public abstract class AbstractRetryingClient<I extends Request, O extends Respon
         }
 
         boolean timeoutForWholeRetryEnabled() {
-            return deadlineNanos != 0;
+            return isTimeoutEnabled;
         }
 
         long actualResponseTimeoutMillis() {

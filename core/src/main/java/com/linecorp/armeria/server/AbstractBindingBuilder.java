@@ -63,10 +63,11 @@ abstract class AbstractBindingBuilder {
     private final List<RoutingPredicate<HttpHeaders>> headerPredicates = new ArrayList<>();
     private final Map<RouteBuilder, Set<HttpMethod>> routeBuilders = new LinkedHashMap<>();
     private final Set<RouteBuilder> pathBuilders = new LinkedHashSet<>();
+    private final List<Route> additionalRoutes = new ArrayList<>();
 
     /**
      * Sets the path pattern that an {@link HttpService} will be bound to.
-     * Please refer to the <a href="https://line.github.io/armeria/server-basics.html#path-patterns">Path patterns</a>
+     * Please refer to the <a href="https://line.github.io/armeria/docs/server-basics#path-patterns">Path patterns</a>
      * in order to learn how to specify a path pattern.
      *
      * @throws IllegalArgumentException if the specified path pattern is invalid
@@ -74,18 +75,6 @@ abstract class AbstractBindingBuilder {
     public AbstractBindingBuilder path(String pathPattern) {
         pathBuilders.add(Route.builder().path(requireNonNull(pathPattern, "pathPattern")));
         return this;
-    }
-
-    /**
-     * Sets the specified prefix which is a directory that an {@link HttpService} will be bound under.
-     * {@code pathUnder("/my/path")} is identical to {@code path("prefix:/my/path")}.
-     *
-     * @throws IllegalArgumentException if the specified path pattern is invalid
-     * @deprecated Use {@link #pathPrefix(String)}.
-     */
-    @Deprecated
-    public AbstractBindingBuilder pathUnder(String prefix) {
-        return pathPrefix(prefix);
     }
 
     /**
@@ -102,7 +91,7 @@ abstract class AbstractBindingBuilder {
     /**
      * Sets the path pattern that an {@link HttpService} will be bound to, only supporting
      * {@link HttpMethod#GET} requests.
-     * Please refer to the <a href="https://line.github.io/armeria/server-basics.html#path-patterns">Path patterns</a>
+     * Please refer to the <a href="https://line.github.io/armeria/docs/server-basics#path-patterns">Path patterns</a>
      * in order to learn how to specify a path pattern.
      *
      * @throws IllegalArgumentException if the specified path pattern is invalid
@@ -115,7 +104,7 @@ abstract class AbstractBindingBuilder {
     /**
      * Sets the path pattern that an {@link HttpService} will be bound to, only supporting
      * {@link HttpMethod#POST} requests.
-     * Please refer to the <a href="https://line.github.io/armeria/server-basics.html#path-patterns">Path patterns</a>
+     * Please refer to the <a href="https://line.github.io/armeria/docs/server-basics#path-patterns">Path patterns</a>
      * in order to learn how to specify a path pattern.
      *
      * @throws IllegalArgumentException if the specified path pattern is invalid
@@ -128,7 +117,7 @@ abstract class AbstractBindingBuilder {
     /**
      * Sets the path pattern that an {@link HttpService} will be bound to, only supporting
      * {@link HttpMethod#PUT} requests.
-     * Please refer to the <a href="https://line.github.io/armeria/server-basics.html#path-patterns">Path patterns</a>
+     * Please refer to the <a href="https://line.github.io/armeria/docs/server-basics#path-patterns">Path patterns</a>
      * in order to learn how to specify a path pattern.
      *
      * @throws IllegalArgumentException if the specified path pattern is invalid
@@ -141,7 +130,7 @@ abstract class AbstractBindingBuilder {
     /**
      * Sets the path pattern that an {@link HttpService} will be bound to, only supporting
      * {@link HttpMethod#PATCH} requests.
-     * Please refer to the <a href="https://line.github.io/armeria/server-basics.html#path-patterns">Path patterns</a>
+     * Please refer to the <a href="https://line.github.io/armeria/docs/server-basics#path-patterns">Path patterns</a>
      * in order to learn how to specify a path pattern.
      *
      * @throws IllegalArgumentException if the specified path pattern is invalid
@@ -154,7 +143,7 @@ abstract class AbstractBindingBuilder {
     /**
      * Sets the path pattern that an {@link HttpService} will be bound to, only supporting
      * {@link HttpMethod#DELETE} requests.
-     * Please refer to the <a href="https://line.github.io/armeria/server-basics.html#path-patterns">Path patterns</a>
+     * Please refer to the <a href="https://line.github.io/armeria/docs/server-basics#path-patterns">Path patterns</a>
      * in order to learn how to specify a path pattern.
      *
      * @throws IllegalArgumentException if the specified path pattern is invalid
@@ -167,7 +156,7 @@ abstract class AbstractBindingBuilder {
     /**
      * Sets the path pattern that an {@link HttpService} will be bound to, only supporting
      * {@link HttpMethod#OPTIONS} requests.
-     * Please refer to the <a href="https://line.github.io/armeria/server-basics.html#path-patterns">Path patterns</a>
+     * Please refer to the <a href="https://line.github.io/armeria/docs/server-basics#path-patterns">Path patterns</a>
      * in order to learn how to specify a path pattern.
      *
      * @throws IllegalArgumentException if the specified path pattern is invalid
@@ -180,7 +169,7 @@ abstract class AbstractBindingBuilder {
     /**
      * Sets the path pattern that an {@link HttpService} will be bound to, only supporting
      * {@link HttpMethod#HEAD} requests.
-     * Please refer to the <a href="https://line.github.io/armeria/server-basics.html#path-patterns">Path patterns</a>
+     * Please refer to the <a href="https://line.github.io/armeria/docs/server-basics#path-patterns">Path patterns</a>
      * in order to learn how to specify a path pattern.
      *
      * @throws IllegalArgumentException if the specified path pattern is invalid
@@ -193,7 +182,7 @@ abstract class AbstractBindingBuilder {
     /**
      * Sets the path pattern that an {@link HttpService} will be bound to, only supporting
      * {@link HttpMethod#TRACE} requests.
-     * Please refer to the <a href="https://line.github.io/armeria/server-basics.html#path-patterns">Path patterns</a>
+     * Please refer to the <a href="https://line.github.io/armeria/docs/server-basics#path-patterns">Path patterns</a>
      * in order to learn how to specify a path pattern.
      *
      * @throws IllegalArgumentException if the specified path pattern is invalid
@@ -206,7 +195,7 @@ abstract class AbstractBindingBuilder {
     /**
      * Sets the path pattern that an {@link HttpService} will be bound to, only supporting
      * {@link HttpMethod#CONNECT} requests.
-     * Please refer to the <a href="https://line.github.io/armeria/server-basics.html#path-patterns">Path patterns</a>
+     * Please refer to the <a href="https://line.github.io/armeria/docs/server-basics#path-patterns">Path patterns</a>
      * in order to learn how to specify a path pattern.
      *
      * @throws IllegalArgumentException if the specified path pattern is invalid
@@ -252,7 +241,7 @@ abstract class AbstractBindingBuilder {
      */
     public AbstractBindingBuilder methods(Iterable<HttpMethod> methods) {
         requireNonNull(methods, "methods");
-        checkArgument(!Iterables.isEmpty(methods), "methods can't be empty");
+        checkArgument(!Iterables.isEmpty(methods), "methods can't be empty.");
         this.methods = Sets.immutableEnumSet(methods);
         return this;
     }
@@ -409,23 +398,34 @@ abstract class AbstractBindingBuilder {
     }
 
     /**
+     * Specifies an additional {@link Route} that should be matched.
+     */
+    public AbstractBindingBuilder addRoute(Route route) {
+        additionalRoutes.add(requireNonNull(route, "route"));
+        return this;
+    }
+
+    /**
      * Returns a newly-created {@link Route}s based on the properties of this builder.
      */
     final List<Route> buildRouteList() {
         final Builder<Route> builder = ImmutableList.builder();
 
-        if (pathBuilders.isEmpty() && routeBuilders.isEmpty()) {
-            throw new IllegalStateException(
-                    "Should set at least one path that the service is bound to before calling this.");
-        }
-        if (pathBuilders.isEmpty() && !methods.isEmpty()) {
-            throw new IllegalStateException("Should set a path when the methods are set: " + methods);
+        if (additionalRoutes.isEmpty()) {
+            if (pathBuilders.isEmpty() && routeBuilders.isEmpty()) {
+                throw new IllegalStateException(
+                        "Should set at least one path that the service is bound to before calling this.");
+            }
+            if (pathBuilders.isEmpty() && !methods.isEmpty()) {
+                throw new IllegalStateException("Should set a path when the methods are set: " + methods);
+            }
         }
 
         if (!pathBuilders.isEmpty()) {
             final Set<HttpMethod> pathMethods = methods.isEmpty() ? HttpMethod.knownMethods() : methods;
             pathBuilders.forEach(pathBuilder -> addRouteBuilder(pathBuilder, pathMethods));
         }
+
         routeBuilders.forEach((routeBuilder, routeMethods) -> {
             builder.add(routeBuilder.methods(routeMethods)
                                     .consumes(consumeTypes)
@@ -434,6 +434,8 @@ abstract class AbstractBindingBuilder {
                                     .matchesHeaders(headerPredicates)
                                     .build());
         });
+
+        additionalRoutes.forEach(builder::add);
 
         return builder.build();
     }

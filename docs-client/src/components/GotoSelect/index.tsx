@@ -206,7 +206,7 @@ function SingleValue(props: SingleValueProps<OptionType>) {
   return (
     <Typography
       className={props.selectProps.classes.singleValue}
-      noWrap={true}
+      noWrap
       {...props.innerProps}
     >
       {props.children}
@@ -403,7 +403,7 @@ const GotoSelect: React.FunctionComponent<GotoSelectProps> = ({
         {/* Can't express nested options with react-select's type definition.
         // @ts-ignore */}
         <Async
-          autoFocus={true}
+          autoFocus
           classes={classes}
           styles={selectStyles}
           inputId="go-to-select"

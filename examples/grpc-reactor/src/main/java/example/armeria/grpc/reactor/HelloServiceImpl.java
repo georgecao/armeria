@@ -30,7 +30,8 @@ public class HelloServiceImpl extends HelloServiceImplBase {
         // You can use the event loop for scheduling a task.
         return request
                 .delayElement(Duration.ofSeconds(3),
-                              Schedulers.fromExecutor(ServiceRequestContext.current().contextAwareEventLoop())
+                              Schedulers.fromExecutor(ServiceRequestContext.current()
+                                                                           .contextAwareEventLoop())
                 )
                 .map(it -> buildReply(toMessage(it.getName())));
     }
@@ -38,7 +39,7 @@ public class HelloServiceImpl extends HelloServiceImplBase {
     /**
      * Sends a {@link HelloReply} using {@code blockingTaskExecutor}.
      *
-     * @see <a href="https://line.github.io/armeria/server-grpc.html#blocking-service-implementation">Blocking
+     * @see <a href="https://line.github.io/armeria/docs/server-grpc#blocking-service-implementation">Blocking
      *      service implementation</a>
      */
     @Override
@@ -53,7 +54,8 @@ public class HelloServiceImpl extends HelloServiceImplBase {
         //
         // In this example, we chose the option 1:
         return request
-                .publishOn(Schedulers.fromExecutor(ServiceRequestContext.current().blockingTaskExecutor()))
+                .publishOn(Schedulers.fromExecutor(ServiceRequestContext.current()
+                                                                        .blockingTaskExecutor()))
                 .map(it -> {
                     try {
                         // Simulate a blocking API call.

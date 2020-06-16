@@ -18,7 +18,6 @@ package com.linecorp.armeria.client.endpoint.healthcheck;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
-import static com.linecorp.armeria.client.endpoint.healthcheck.HealthCheckedEndpointGroup.DEFAULT_HEALTH_CHECK_RETRY_BACKOFF;
 import static java.util.Objects.requireNonNull;
 
 import java.time.Duration;
@@ -40,6 +39,8 @@ import com.linecorp.armeria.common.util.AsyncCloseable;
  * A skeletal builder implementation for creating a new {@link HealthCheckedEndpointGroup}.
  */
 public abstract class AbstractHealthCheckedEndpointGroupBuilder {
+
+    static final Backoff DEFAULT_HEALTH_CHECK_RETRY_BACKOFF = Backoff.fixed(3000).withJitter(0.2);
 
     private final EndpointGroup delegate;
 
@@ -77,18 +78,6 @@ public abstract class AbstractHealthCheckedEndpointGroupBuilder {
     public AbstractHealthCheckedEndpointGroupBuilder protocol(SessionProtocol protocol) {
         this.protocol = requireNonNull(protocol, "protocol");
         return this;
-    }
-
-    /**
-     * Sets the port where a health check request will be sent instead of the original port number
-     * specified by {@link EndpointGroup}'s {@link Endpoint}s. This property is useful when your
-     * server listens to health check requests on a different port.
-     *
-     * @deprecated Use {@link #port(int)}.
-     */
-    @Deprecated
-    public AbstractHealthCheckedEndpointGroupBuilder healthCheckPort(int port) {
-        return port(port);
     }
 
     /**

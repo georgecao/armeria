@@ -48,7 +48,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
-import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -66,10 +65,8 @@ import com.google.common.collect.MapMaker;
 import com.linecorp.armeria.common.AggregatedHttpRequest;
 import com.linecorp.armeria.common.Cookie;
 import com.linecorp.armeria.common.Cookies;
-import com.linecorp.armeria.common.DefaultHttpParameters;
 import com.linecorp.armeria.common.HttpHeaderNames;
 import com.linecorp.armeria.common.HttpHeaders;
-import com.linecorp.armeria.common.HttpParameters;
 import com.linecorp.armeria.common.HttpRequest;
 import com.linecorp.armeria.common.MediaType;
 import com.linecorp.armeria.common.QueryParams;
@@ -77,11 +74,11 @@ import com.linecorp.armeria.common.Request;
 import com.linecorp.armeria.common.RequestContext;
 import com.linecorp.armeria.common.RequestHeaders;
 import com.linecorp.armeria.common.util.Exceptions;
-import com.linecorp.armeria.internal.common.util.FallthroughException;
 import com.linecorp.armeria.internal.server.annotation.AnnotatedBeanFactoryRegistry.BeanFactoryId;
 import com.linecorp.armeria.server.ServiceRequestContext;
 import com.linecorp.armeria.server.annotation.ByteArrayRequestConverterFunction;
 import com.linecorp.armeria.server.annotation.Default;
+import com.linecorp.armeria.server.annotation.FallthroughException;
 import com.linecorp.armeria.server.annotation.Header;
 import com.linecorp.armeria.server.annotation.JacksonRequestConverterFunction;
 import com.linecorp.armeria.server.annotation.Param;
@@ -569,19 +566,6 @@ final class AnnotatedValueResolver {
                     .build();
         }
 
-        if (actual == HttpParameters.class) {
-            return builder(annotatedElement, type)
-                    .supportOptional(true)
-                    .resolver((unused, ctx) -> {
-                        final QueryParams src = ctx.queryParams();
-                        final HttpParameters dest = new DefaultHttpParameters(src.size());
-                        src.forEach((BiConsumer<String, String>) dest::add);
-                        return dest;
-                    })
-                    .aggregation(AggregationStrategy.FOR_FORM_DATA)
-                    .build();
-        }
-
         if (actual == Cookies.class) {
             return builder(annotatedElement, type)
                     .supportOptional(true)
@@ -839,7 +823,7 @@ final class AnnotatedValueResolver {
             // May return 'null' if no default value is specified.
             return defaultValue;
         }
-        throw new IllegalArgumentException("Mandatory parameter is missing: " + httpElementName);
+        throw new IllegalArgumentException("Mandatory parameter/header is missing: " + httpElementName);
     }
 
     @Override
@@ -1061,14 +1045,29 @@ final class AnnotatedValueResolver {
                     defaultValue = null;
                 }
             } else {
-                shouldExist = !shouldWrapValueAsOptional;
                 // Set the default value to null if it was not specified.
                 defaultValue = null;
+
+                if (shouldWrapValueAsOptional) {
+                    shouldExist = false;
+                } else {
+                    // Allow `null` if annotated with `@Nullable`.
+                    boolean isNonNull = true;
+                    for (Annotation a : annotatedElement.getAnnotations()) {
+                        final String annotationTypeName = a.annotationType().getName();
+                        if (annotationTypeName.endsWith(".Nullable")) {
+                            isNonNull = false;
+                            break;
+                        }
+                    }
+
+                    shouldExist = isNonNull;
+                }
             }
 
             if (pathVariable && !shouldExist) {
-                logger.warn("Optional is redundant for path variable '{}' because the value is always present.",
-                            httpElementName);
+                logger.warn("Optional or @Nullable is redundant for path variable '{}' " +
+                            "because the value is always present.", httpElementName);
             }
 
             final Entry<Class<?>, Class<?>> types;

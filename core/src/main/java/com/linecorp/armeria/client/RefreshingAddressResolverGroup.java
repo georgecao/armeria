@@ -29,9 +29,6 @@ import java.util.function.Consumer;
 
 import javax.annotation.Nullable;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableList.Builder;
@@ -57,8 +54,6 @@ final class RefreshingAddressResolverGroup extends AddressResolverGroup<InetSock
     // Forked from Netty 4.1.43 at 2e5dd288008d4e674f53beaf8d323595813062fb
     // - if else logic in static initialization block
     // - anyInterfaceSupportsIpV6()
-
-    private static final Logger logger = LoggerFactory.getLogger(RefreshingAddressResolverGroup.class);
 
     private static final List<DnsRecordType> defaultDnsRecordTypes;
 
@@ -99,18 +94,21 @@ final class RefreshingAddressResolverGroup extends AddressResolverGroup<InetSock
 
     private final int minTtl;
     private final int maxTtl;
-    private int negativeTtl;
+    private final int negativeTtl;
+    private final long queryTimeoutMillis;
     private final Backoff refreshBackoff;
     private final List<DnsRecordType> dnsRecordTypes;
     private final Consumer<DnsNameResolverBuilder> resolverConfigurator;
 
     RefreshingAddressResolverGroup(Consumer<DnsNameResolverBuilder> resolverConfigurator,
-                                   int minTtl, int maxTtl, int negativeTtl, Backoff refreshBackoff,
+                                   int minTtl, int maxTtl, int negativeTtl, long queryTimeoutMillis,
+                                   Backoff refreshBackoff,
                                    @Nullable ResolvedAddressTypes resolvedAddressTypes) {
         this.resolverConfigurator = resolverConfigurator;
         this.minTtl = minTtl;
         this.maxTtl = maxTtl;
         this.negativeTtl = negativeTtl;
+        this.queryTimeoutMillis = queryTimeoutMillis;
         this.refreshBackoff = refreshBackoff;
         if (resolvedAddressTypes == null) {
             dnsRecordTypes = defaultDnsRecordTypes;
@@ -130,7 +128,8 @@ final class RefreshingAddressResolverGroup extends AddressResolverGroup<InetSock
         final EventLoop eventLoop = (EventLoop) executor;
         final DnsNameResolverBuilder builder = new DnsNameResolverBuilder(eventLoop);
         resolverConfigurator.accept(builder);
-        final DefaultDnsNameResolver resolver = new DefaultDnsNameResolver(builder.build(), eventLoop);
+        final DefaultDnsNameResolver resolver = new DefaultDnsNameResolver(builder.build(), eventLoop,
+                                                                           queryTimeoutMillis);
         return new RefreshingAddressResolver(eventLoop, cache, resolver, dnsRecordTypes, minTtl, maxTtl,
                                              negativeTtl, refreshBackoff);
     }

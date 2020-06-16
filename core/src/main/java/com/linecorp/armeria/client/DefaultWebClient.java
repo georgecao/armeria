@@ -21,21 +21,15 @@ import static com.linecorp.armeria.internal.common.ArmeriaHttpUtil.isAbsoluteUri
 
 import java.net.URI;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.linecorp.armeria.client.endpoint.EndpointGroup;
 import com.linecorp.armeria.common.AggregatedHttpRequest;
 import com.linecorp.armeria.common.HttpRequest;
 import com.linecorp.armeria.common.HttpResponse;
-import com.linecorp.armeria.common.logging.RequestLogProperty;
 import com.linecorp.armeria.internal.common.PathAndQuery;
 
 import io.micrometer.core.instrument.MeterRegistry;
 
 final class DefaultWebClient extends UserClient<HttpRequest, HttpResponse> implements WebClient {
-
-    private static final Logger logger = LoggerFactory.getLogger(DefaultWebClient.class);
 
     static final WebClient DEFAULT = new WebClientBuilder().build();
 
@@ -45,32 +39,35 @@ final class DefaultWebClient extends UserClient<HttpRequest, HttpResponse> imple
 
     @Override
     public HttpResponse execute(HttpRequest req) {
-        URI uri;
-
-        if (isAbsoluteUri(req.path())) {
-            try {
-                uri = URI.create(req.path());
-            } catch (Exception ex) {
-                logger.warn("Failed to create URI: {}", req.path(), ex);
-                uri = null;
+        if (Clients.isUndefinedUri(uri())) {
+            final URI uri;
+            if (isAbsoluteUri(req.path())) {
+                try {
+                    uri = URI.create(req.path());
+                } catch (Exception ex) {
+                    return abortRequestAndReturnFailureResponse(req, new IllegalArgumentException(
+                            "Failed to create a URI: " + req.path(), ex));
+                }
+            } else if (req.scheme() != null && req.authority() != null) {
+                uri = req.uri();
+            } else {
+                return abortRequestAndReturnFailureResponse(req, new IllegalArgumentException(
+                        "Scheme and authority must be specified in \":path\" or " +
+                        "in \":scheme\" and \":authority\". :path=" +
+                        req.path() + ", :scheme=" + req.scheme() + ", :authority=" + req.authority()));
             }
-        } else {
-            uri = null;
-        }
-
-        if (uri != null) {
             final Endpoint endpoint = Endpoint.parse(uri.getAuthority());
             final String query = uri.getRawQuery();
             final String path = uri.getRawPath();
             final HttpRequest newReq = req.withHeaders(req.headers().toBuilder()
-                    .path(query == null ? path : path + '?' + query));
+                                                          .path(query == null ? path : path + '?' + query));
             return execute(endpoint, newReq);
         }
 
-        if (Clients.isUndefinedUri(uri())) {
-            final IllegalArgumentException cause = new IllegalArgumentException("no authority: " + req.path());
-            req.abort(cause);
-            return HttpResponse.ofFailure(cause);
+        if (isAbsoluteUri(req.path())) {
+            return abortRequestAndReturnFailureResponse(req, new IllegalArgumentException(
+                    "Cannot send a request with a \":path\" header that contains a URI with the authority, " +
+                    "because the client was created with a base URI. path: " + req.path()));
         }
 
         final String originalPath = req.path();
@@ -89,27 +86,21 @@ final class DefaultWebClient extends UserClient<HttpRequest, HttpResponse> imple
         final PathAndQuery pathAndQuery = PathAndQuery.parse(req.path());
         if (pathAndQuery == null) {
             final IllegalArgumentException cause = new IllegalArgumentException("invalid path: " + req.path());
-            req.abort(cause);
-            return HttpResponse.ofFailure(cause);
+            return abortRequestAndReturnFailureResponse(req, cause);
         }
         return execute(endpointGroup, req.method(),
                        pathAndQuery.path(), pathAndQuery.query(), null, req,
-                       (ctx, cause) -> {
-                           if (ctx != null && !ctx.log().isAvailable(RequestLogProperty.SESSION)) {
-                               // An exception has been raised even before sending a request,
-                               // so abort the request to release the elements.
-                               if (cause == null) {
-                                   req.abort();
-                               } else {
-                                   req.abort(cause);
-                               }
-                           }
-                           return HttpResponse.ofFailure(cause);
-                       });
+                       (ctx, cause) -> HttpResponse.ofFailure(cause));
     }
 
     @Override
     public HttpResponse execute(AggregatedHttpRequest aggregatedReq) {
         return execute(aggregatedReq.toHttpRequest());
+    }
+
+    private static HttpResponse abortRequestAndReturnFailureResponse(
+            HttpRequest req, IllegalArgumentException cause) {
+        req.abort(cause);
+        return HttpResponse.ofFailure(cause);
     }
 }

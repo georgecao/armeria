@@ -22,16 +22,13 @@ import com.linecorp.armeria.server.RpcService;
 /**
  * A general purpose {@link AbstractCompositeServiceBuilder} implementation. Useful when you do not want to
  * define a new dedicated {@link RpcService} builder type.
+ *
+ * @deprecated This class will be removed without a replacement.
  */
+@Deprecated
 public final class SimpleCompositeRpcServiceBuilder extends AbstractCompositeServiceBuilder<RpcService> {
 
-    /**
-     * Creates a new {@link SimpleCompositeRpcServiceBuilder}.
-     *
-     * @deprecated Use {@link SimpleCompositeRpcService#builder()}.
-     */
-    @Deprecated
-    public SimpleCompositeRpcServiceBuilder() {}
+    SimpleCompositeRpcServiceBuilder() {}
 
     @Override
     public SimpleCompositeRpcServiceBuilder serviceUnder(String pathPrefix, RpcService service) {

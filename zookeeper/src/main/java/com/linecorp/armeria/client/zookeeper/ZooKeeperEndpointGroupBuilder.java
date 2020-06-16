@@ -15,58 +15,33 @@
  */
 package com.linecorp.armeria.client.zookeeper;
 
-import static com.google.common.base.Preconditions.checkState;
-import static com.linecorp.armeria.internal.common.zookeeper.ZooKeeperDefaults.DEFAULT_CONNECT_TIMEOUT_MS;
-import static com.linecorp.armeria.internal.common.zookeeper.ZooKeeperDefaults.DEFAULT_RETRY_POLICY;
-import static com.linecorp.armeria.internal.common.zookeeper.ZooKeeperDefaults.DEFAULT_SESSION_TIMEOUT_MS;
 import static java.util.Objects.requireNonNull;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.time.Duration;
 import java.util.function.Consumer;
 
-import javax.annotation.Nullable;
-
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.curator.framework.CuratorFrameworkFactory;
+import org.apache.curator.framework.CuratorFrameworkFactory.Builder;
 
 import com.linecorp.armeria.client.endpoint.EndpointSelectionStrategy;
-import com.linecorp.armeria.common.zookeeper.NodeValueCodec;
+import com.linecorp.armeria.common.zookeeper.AbstractCuratorFrameworkBuilder;
 
 /**
  * Builds a {@link ZooKeeperEndpointGroup}.
  */
-public final class ZooKeeperEndpointGroupBuilder {
+public final class ZooKeeperEndpointGroupBuilder extends AbstractCuratorFrameworkBuilder {
 
-    @Nullable
-    private final CuratorFramework client;
-    @Nullable
-    private final CuratorFrameworkFactory.Builder clientBuilder;
-    @Nullable
-    private final List<Consumer<? super CuratorFrameworkFactory.Builder>> customizers;
-    private final String zNodePath;
-
+    private final ZookeeperDiscoverySpec spec;
     private EndpointSelectionStrategy selectionStrategy = EndpointSelectionStrategy.weightedRoundRobin();
-    private NodeValueCodec nodeValueCodec = NodeValueCodec.ofDefault();
 
-    ZooKeeperEndpointGroupBuilder(String zkConnectionStr, String zNodePath) {
-        clientBuilder = CuratorFrameworkFactory.builder()
-                                               .connectString(zkConnectionStr)
-                                               .connectionTimeoutMs(DEFAULT_CONNECT_TIMEOUT_MS)
-                                               .sessionTimeoutMs(DEFAULT_SESSION_TIMEOUT_MS)
-                                               .retryPolicy(DEFAULT_RETRY_POLICY);
-        this.zNodePath = zNodePath;
-        customizers = new ArrayList<>();
-
-        client = null;
+    ZooKeeperEndpointGroupBuilder(String zkConnectionStr, String zNodePath, ZookeeperDiscoverySpec spec) {
+        super(zkConnectionStr, zNodePath);
+        this.spec = requireNonNull(spec, "spec");
     }
 
-    ZooKeeperEndpointGroupBuilder(CuratorFramework client, String zNodePath) {
-        this.client = client;
-        this.zNodePath = zNodePath;
-
-        clientBuilder = null;
-        customizers = null;
+    ZooKeeperEndpointGroupBuilder(CuratorFramework client, String zNodePath, ZookeeperDiscoverySpec spec) {
+        super(client, zNodePath);
+        this.spec = requireNonNull(spec, "spec");
     }
 
     /**
@@ -78,43 +53,39 @@ public final class ZooKeeperEndpointGroupBuilder {
     }
 
     /**
-     * Sets the {@link NodeValueCodec} of the {@link ZooKeeperEndpointGroup}.
-     */
-    public ZooKeeperEndpointGroupBuilder codec(NodeValueCodec nodeValueCodec) {
-        this.nodeValueCodec = requireNonNull(nodeValueCodec, "nodeValueCodec");
-        return this;
-    }
-
-    /**
-     * Specifies the {@link Consumer} that customizes the {@link CuratorFramework}.
-     *
-     * @throws IllegalStateException if this builder was created with an existing {@link CuratorFramework}
-     *                               instance.
-     */
-    public ZooKeeperEndpointGroupBuilder customizer(
-            Consumer<? super CuratorFrameworkFactory.Builder> customizer) {
-        checkState(customizers != null, "Cannot customize if using an existing CuratorFramework instance.");
-        customizers.add(requireNonNull(customizer, "customizer"));
-        return this;
-    }
-
-    /**
-     * Returns a new {@link ZooKeeperEndpointGroup} created with the properties set so far.
+     * Returns a newly-created {@link ZooKeeperEndpointGroup} based on the properties set so far.
      */
     public ZooKeeperEndpointGroup build() {
-        final CuratorFramework client;
-        final boolean internalClient;
-        if (clientBuilder != null) {
-            assert customizers != null;
-            customizers.forEach(c -> c.accept(clientBuilder));
-            client = clientBuilder.build();
-            internalClient = true;
-        } else {
-            assert this.client != null;
-            client = this.client;
-            internalClient = false;
-        }
+        final CuratorFramework client = buildCuratorFramework();
+        final boolean internalClient = !isUserSpecifiedCuratorFramework();
 
-        return new ZooKeeperEndpointGroup(selectionStrategy, client, zNodePath, nodeValueCodec, internalClient);
+        return new ZooKeeperEndpointGroup(selectionStrategy, client, zNodePath(), spec, internalClient);
+    }
+
+    // Override the return type of the chaining methods in the superclass.
+
+    @Override
+    public ZooKeeperEndpointGroupBuilder connectTimeout(Duration connectTimeout) {
+        return (ZooKeeperEndpointGroupBuilder) super.connectTimeout(connectTimeout);
+    }
+
+    @Override
+    public ZooKeeperEndpointGroupBuilder connectTimeoutMillis(long connectTimeoutMillis) {
+        return (ZooKeeperEndpointGroupBuilder) super.connectTimeoutMillis(connectTimeoutMillis);
+    }
+
+    @Override
+    public ZooKeeperEndpointGroupBuilder sessionTimeout(Duration sessionTimeout) {
+        return (ZooKeeperEndpointGroupBuilder) super.sessionTimeout(sessionTimeout);
+    }
+
+    @Override
+    public ZooKeeperEndpointGroupBuilder sessionTimeoutMillis(long sessionTimeoutMillis) {
+        return (ZooKeeperEndpointGroupBuilder) super.sessionTimeoutMillis(sessionTimeoutMillis);
+    }
+
+    @Override
+    public ZooKeeperEndpointGroupBuilder customizer(Consumer<? super Builder> customizer) {
+        return (ZooKeeperEndpointGroupBuilder) super.customizer(customizer);
     }
 }
